@@ -4,6 +4,12 @@
 
 RePackr is an interactive travel packing planner that helps you organize your packing list by day, track item totals, and efficiently manage what you need to bring on your travels.
 
+![RePackr Demo](./docs/repackr_demo.png)
+<br/>
+<sub>Close-up view</sub>
+
+![RePackr Demo Close](./docs/repackr_demo_close.png)
+
 ## 🚀 Features
 
 - **Visual Day-by-Day Planning**: Create boards for each day of your trip
@@ -125,7 +131,7 @@ Contributions, issues, and feature requests are welcome! Feel free to check the 
 
 ## 📄 License
 
-This project is [MIT](LICENSE) licensed.
+This project is licensed under [Apache-2.0](LICENSE).
 
 ## 🙏 Acknowledgements
 
