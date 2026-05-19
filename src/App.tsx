@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { DragDropContext, DropResult } from 'react-beautiful-dnd';
 import { Box, Container, Typography, createTheme, ThemeProvider, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, FormControlLabel, Switch, Tooltip, IconButton, Menu, MenuItem as MenuOption, Divider, Snackbar, Alert } from '@mui/material';
 import { PackingItem, DailyBoard, ItemTotals } from './types';
@@ -16,7 +16,27 @@ import FileUploadIcon from '@mui/icons-material/FileUpload';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import HelpIcon from '@mui/icons-material/Help';
 import Tutorial from './components/Tutorial';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AuthScreen } from './components/AuthScreen';
+import { UserMenu } from './components/UserMenu';
+import { useCloudSync } from './hooks/useCloudSync';
+import type { RepackrCloudState } from './types';
+import { Box as MuiBox, CircularProgress } from '@mui/material';
 
+const DEFAULT_MASTER_ITEMS: PackingItem[] = [
+  { id: '', name: 'T-Shirt', category: 'Clothing', quantity: 1, isReusable: false },
+  { id: '', name: 'Socks', category: 'Clothing', quantity: 1, isReusable: false },
+  { id: '', name: 'Underwear', category: 'Clothing', quantity: 1, isReusable: false },
+  { id: '', name: 'Toothbrush', category: 'Toiletries', quantity: 1, isReusable: true },
+  { id: '', name: 'Toothpaste', category: 'Toiletries', quantity: 1, isReusable: true },
+  { id: '', name: 'Phone Charger', category: 'Electronics', quantity: 1, isReusable: true },
+  { id: '', name: 'Passport', category: 'Documents', quantity: 1, isReusable: true },
+].map((item) => ({ ...item, id: uuidv4() }));
+
+const DEFAULT_DAILY_BOARDS: DailyBoard[] = [
+  { id: 'day1', title: 'Day 1', items: [] },
+  { id: 'day2', title: 'Day 2', items: [] },
+];
 
 const theme = createTheme({
   palette: {
@@ -55,35 +75,16 @@ const theme = createTheme({
 const categories = ['Clothing', 'Toiletries', 'Electronics', 'Documents', 'Other'];
 
 function AppContent() {
+  const { user, localMode } = useAuth();
 
-  
   const [masterItems, setMasterItems] = useState<PackingItem[]>(() => {
     const savedItems = loadMasterItems();
-    // If no saved items exist, create default starter items
-    if (savedItems.length === 0) {
-      return [
-        { id: uuidv4(), name: 'T-Shirt', category: 'Clothing', quantity: 1, isReusable: false },
-        { id: uuidv4(), name: 'Socks', category: 'Clothing', quantity: 1, isReusable: false },
-        { id: uuidv4(), name: 'Underwear', category: 'Clothing', quantity: 1, isReusable: false },
-        { id: uuidv4(), name: 'Toothbrush', category: 'Toiletries', quantity: 1, isReusable: true },
-        { id: uuidv4(), name: 'Toothpaste', category: 'Toiletries', quantity: 1, isReusable: true },
-        { id: uuidv4(), name: 'Phone Charger', category: 'Electronics', quantity: 1, isReusable: true },
-        { id: uuidv4(), name: 'Passport', category: 'Documents', quantity: 1, isReusable: true },
-      ];
-    }
-    return savedItems;
+    return savedItems.length === 0 ? DEFAULT_MASTER_ITEMS : savedItems;
   });
 
   const [dailyBoards, setDailyBoards] = useState<DailyBoard[]>(() => {
     const savedBoards = loadDailyBoards();
-    // If no saved boards exist, create default days
-    if (savedBoards.length === 0) {
-      return [
-        { id: 'day1', title: 'Day 1', items: [] },
-        { id: 'day2', title: 'Day 2', items: [] },
-      ];
-    }
-    return savedBoards;
+    return savedBoards.length === 0 ? DEFAULT_DAILY_BOARDS : savedBoards;
   });
 
   const [itemTotals, setItemTotals] = useState<ItemTotals>({});
@@ -118,13 +119,6 @@ function AppContent() {
   const [showTutorial, setShowTutorial] = useState<boolean>(() => {
     return !loadTutorialCompleted();
   });
-
-  // Calculate initial totals when app loads
-  useEffect(() => {
-    if (dailyBoards.length > 0) {
-      updateTotals(dailyBoards);
-    }
-  }, []); // Run once on mount
 
   // Save to local storage whenever data changes
   useEffect(() => {
@@ -271,6 +265,43 @@ function AppContent() {
 
     setItemTotals(newTotals);
   };
+
+  const applyCloudState = useCallback(
+    (cloud: RepackrCloudState) => {
+      setMasterItems(cloud.masterItems);
+      setDailyBoards(cloud.dailyBoards);
+      setPackedItems(cloud.packedItems);
+      setIsHorizontalView(cloud.isHorizontalView);
+      setShowTutorial(!cloud.tutorialCompleted);
+      saveMasterItems(cloud.masterItems);
+      saveDailyBoards(cloud.dailyBoards);
+      savePackedItems(cloud.packedItems);
+      saveViewPreference(cloud.isHorizontalView);
+      saveTutorialCompleted(cloud.tutorialCompleted);
+      updateTotals(cloud.dailyBoards);
+    },
+    [],
+  );
+
+  const cloudSnapshot = useMemo<RepackrCloudState>(
+    () => ({
+      masterItems,
+      dailyBoards,
+      packedItems,
+      isHorizontalView,
+      tutorialCompleted: !showTutorial,
+    }),
+    [masterItems, dailyBoards, packedItems, isHorizontalView, showTutorial],
+  );
+
+  const cloudReady = useCloudSync(user, localMode, cloudSnapshot, applyCloudState);
+
+  // Calculate initial totals when app loads
+  useEffect(() => {
+    if (dailyBoards.length > 0) {
+      updateTotals(dailyBoards);
+    }
+  }, []); // Run once on mount
 
   const handleAddNewItem = () => {
     if (newItem.name.trim()) {
@@ -563,19 +594,8 @@ function AppContent() {
 
   const handleResetData = () => {
     clearTripData();
-    setMasterItems([
-      { id: uuidv4(), name: 'T-Shirt', category: 'Clothing', quantity: 1, isReusable: false },
-      { id: uuidv4(), name: 'Socks', category: 'Clothing', quantity: 1, isReusable: false },
-      { id: uuidv4(), name: 'Underwear', category: 'Clothing', quantity: 1, isReusable: false },
-      { id: uuidv4(), name: 'Toothbrush', category: 'Toiletries', quantity: 1, isReusable: true },
-      { id: uuidv4(), name: 'Toothpaste', category: 'Toiletries', quantity: 1, isReusable: true },
-      { id: uuidv4(), name: 'Phone Charger', category: 'Electronics', quantity: 1, isReusable: true },
-      { id: uuidv4(), name: 'Passport', category: 'Documents', quantity: 1, isReusable: true },
-    ]);
-    setDailyBoards([
-      { id: 'day1', title: 'Day 1', items: [] },
-      { id: 'day2', title: 'Day 2', items: [] },
-    ]);
+    setMasterItems(DEFAULT_MASTER_ITEMS.map((item) => ({ ...item, id: uuidv4() })));
+    setDailyBoards([...DEFAULT_DAILY_BOARDS]);
     setItemTotals({});
     setPackedItems({});
     setIsResetDialogOpen(false);
@@ -621,6 +641,14 @@ function AppContent() {
     savePackedItems(packedItems);
   }, [packedItems]);
 
+  if (!cloudReady) {
+    return (
+      <MuiBox display="flex" alignItems="center" justifyContent="center" minHeight="100vh">
+        <CircularProgress color="primary" />
+      </MuiBox>
+    );
+  }
+
   return (
     <ThemeProvider theme={theme}>
       <DragDropContext onDragEnd={handleDragEnd}>
@@ -629,7 +657,7 @@ function AppContent() {
                          <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
                <Typography variant="h4">RePackr</Typography>
                <Box display="flex" gap={2} alignItems="center">
- 
+                 <UserMenu />
                  <Box display="flex" gap={2}>
                 {/* Help button */}
                 <Tooltip title="Start Tutorial">
@@ -907,8 +935,34 @@ function AppContent() {
   );
 }
 
-function App() {
+function AppGate() {
+  const { user, localMode, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <MuiBox display="flex" alignItems="center" justifyContent="center" minHeight="100vh">
+        <CircularProgress color="primary" />
+      </MuiBox>
+    );
+  }
+
+  if (!user && !localMode) {
+    return (
+      <ThemeProvider theme={theme}>
+        <AuthScreen />
+      </ThemeProvider>
+    );
+  }
+
   return <AppContent />;
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppGate />
+    </AuthProvider>
+  );
 }
 
 export default App; 

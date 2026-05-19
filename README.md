@@ -123,7 +123,7 @@ While primarily designed for desktop and tablet use, basic functionality is avai
 
 ## 🔒 Privacy
 
-RePackr stores all data locally in your browser. Your packing lists are never uploaded to any server.
+With sign-in, trip data syncs to your Firebase project under your Google account. Local-only mode keeps everything in the browser.
 
 ## 🤝 Contributing
 
