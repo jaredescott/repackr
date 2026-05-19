@@ -17,11 +17,9 @@ import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import HelpIcon from '@mui/icons-material/Help';
 import Tutorial from './components/Tutorial';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { AuthScreen } from './components/AuthScreen';
 import { UserMenu } from './components/UserMenu';
 import { useCloudSync } from './hooks/useCloudSync';
 import type { RepackrCloudState } from './types';
-import { Box as MuiBox, CircularProgress } from '@mui/material';
 
 const DEFAULT_MASTER_ITEMS: PackingItem[] = [
   { id: '', name: 'T-Shirt', category: 'Clothing', quantity: 1, isReusable: false },
@@ -75,7 +73,7 @@ const theme = createTheme({
 const categories = ['Clothing', 'Toiletries', 'Electronics', 'Documents', 'Other'];
 
 function AppContent() {
-  const { user, localMode } = useAuth();
+  const { user, authError, clearAuthError } = useAuth();
 
   const [masterItems, setMasterItems] = useState<PackingItem[]>(() => {
     const savedItems = loadMasterItems();
@@ -266,22 +264,19 @@ function AppContent() {
     setItemTotals(newTotals);
   };
 
-  const applyCloudState = useCallback(
-    (cloud: RepackrCloudState) => {
-      setMasterItems(cloud.masterItems);
-      setDailyBoards(cloud.dailyBoards);
-      setPackedItems(cloud.packedItems);
-      setIsHorizontalView(cloud.isHorizontalView);
-      setShowTutorial(!cloud.tutorialCompleted);
-      saveMasterItems(cloud.masterItems);
-      saveDailyBoards(cloud.dailyBoards);
-      savePackedItems(cloud.packedItems);
-      saveViewPreference(cloud.isHorizontalView);
-      saveTutorialCompleted(cloud.tutorialCompleted);
-      updateTotals(cloud.dailyBoards);
-    },
-    [],
-  );
+  const applyCloudState = useCallback((cloud: RepackrCloudState) => {
+    setMasterItems(cloud.masterItems);
+    setDailyBoards(cloud.dailyBoards);
+    setPackedItems(cloud.packedItems ?? {});
+    setIsHorizontalView(Boolean(cloud.isHorizontalView));
+    setShowTutorial(!cloud.tutorialCompleted);
+    saveMasterItems(cloud.masterItems);
+    saveDailyBoards(cloud.dailyBoards);
+    savePackedItems(cloud.packedItems ?? {});
+    saveViewPreference(Boolean(cloud.isHorizontalView));
+    saveTutorialCompleted(Boolean(cloud.tutorialCompleted));
+    updateTotals(cloud.dailyBoards);
+  }, []);
 
   const cloudSnapshot = useMemo<RepackrCloudState>(
     () => ({
@@ -294,7 +289,7 @@ function AppContent() {
     [masterItems, dailyBoards, packedItems, isHorizontalView, showTutorial],
   );
 
-  const cloudReady = useCloudSync(user, localMode, cloudSnapshot, applyCloudState);
+  useCloudSync(user, cloudSnapshot, applyCloudState);
 
   // Calculate initial totals when app loads
   useEffect(() => {
@@ -641,13 +636,12 @@ function AppContent() {
     savePackedItems(packedItems);
   }, [packedItems]);
 
-  if (!cloudReady) {
-    return (
-      <MuiBox display="flex" alignItems="center" justifyContent="center" minHeight="100vh">
-        <CircularProgress color="primary" />
-      </MuiBox>
-    );
-  }
+  useEffect(() => {
+    if (authError) {
+      setSnackbar({ open: true, message: authError, severity: 'error' });
+      clearAuthError();
+    }
+  }, [authError, clearAuthError]);
 
   return (
     <ThemeProvider theme={theme}>
@@ -935,32 +929,10 @@ function AppContent() {
   );
 }
 
-function AppGate() {
-  const { user, localMode, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <MuiBox display="flex" alignItems="center" justifyContent="center" minHeight="100vh">
-        <CircularProgress color="primary" />
-      </MuiBox>
-    );
-  }
-
-  if (!user && !localMode) {
-    return (
-      <ThemeProvider theme={theme}>
-        <AuthScreen />
-      </ThemeProvider>
-    );
-  }
-
-  return <AppContent />;
-}
-
 function App() {
   return (
     <AuthProvider>
-      <AppGate />
+      <AppContent />
     </AuthProvider>
   );
 }

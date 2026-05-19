@@ -63,17 +63,24 @@ export function shouldUseRedirectAuth(): boolean {
   return window.location.hostname.endsWith('github.io');
 }
 
-/** Call once on load after returning from Google redirect. */
-export async function completeRedirectSignIn(): Promise<User | null> {
+/**
+ * Await redirect completion, then subscribe to auth state.
+ * Must run before treating the user as signed out on github.io.
+ */
+export async function initFirebaseAuth(
+  onUser: (user: User | null) => void,
+): Promise<() => void> {
   const auth = getFirebaseAuth();
-  if (!auth || !shouldUseRedirectAuth()) return null;
-  try {
-    const result = await getRedirectResult(auth);
-    return result?.user ?? null;
-  } catch (err) {
-    console.error('Google redirect sign-in failed', err);
-    return null;
+  if (!auth) {
+    onUser(null);
+    return () => {};
   }
+
+  if (shouldUseRedirectAuth()) {
+    await getRedirectResult(auth);
+  }
+
+  return onAuthStateChanged(auth, onUser);
 }
 
 export async function signInWithGoogle(): Promise<User | null> {

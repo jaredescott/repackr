@@ -8,19 +8,19 @@ import React, {
 import type { User } from 'firebase/auth';
 import {
   isFirebaseConfigured,
+  initFirebaseAuth,
   signInWithGoogle,
   signOutUser,
-  subscribeAuth,
 } from '../lib/firebase';
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  localMode: boolean;
+  authError: string | null;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
-  setLocalMode: (value: boolean) => void;
+  clearAuthError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -40,13 +40,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(isFirebaseConfigured());
-  const [localMode, setLocalMode] = useState(() => {
-    try {
-      return localStorage.getItem('repackr-local-mode') === '1';
-    } catch {
-      return false;
-    }
-  });
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isFirebaseConfigured()) {
@@ -54,26 +48,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return;
     }
 
-    return subscribeAuth((nextUser) => {
-      setUser(nextUser);
-      setIsLoading(false);
-    });
+    let unsub: (() => void) | undefined;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        unsub = await initFirebaseAuth((nextUser) => {
+          if (cancelled) return;
+          setUser(nextUser);
+          if (nextUser) setAuthError(null);
+          setIsLoading(false);
+        });
+      } catch (err) {
+        console.error('Firebase auth init failed', err);
+        if (!cancelled) {
+          const message =
+            err instanceof Error ? err.message : 'Google sign-in failed. Please try again.';
+          setAuthError(message);
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
   }, []);
 
-  const handleSetLocalMode = (value: boolean) => {
-    setLocalMode(value);
-    try {
-      if (value) {
-        localStorage.setItem('repackr-local-mode', '1');
-      } else {
-        localStorage.removeItem('repackr-local-mode');
-      }
-    } catch {
-      /* ignore */
-    }
-  };
-
   const signIn = async () => {
+    setAuthError(null);
     await signInWithGoogle();
   };
 
@@ -86,10 +90,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user,
     isAuthenticated: Boolean(user),
     isLoading,
-    localMode,
+    authError,
     signIn,
     signOut,
-    setLocalMode: handleSetLocalMode,
+    clearAuthError: () => setAuthError(null),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
