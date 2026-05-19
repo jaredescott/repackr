@@ -25,4 +25,12 @@ export interface ItemTotals {
     isReusable: boolean;
     daysUsed: number;
   };
+}
+
+export interface RepackrCloudState {
+  masterItems: PackingItem[];
+  dailyBoards: DailyBoard[];
+  packedItems: Record<string, boolean>;
+  isHorizontalView: boolean;
+  tutorialCompleted: boolean;
 } 
